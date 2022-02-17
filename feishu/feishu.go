@@ -1,4 +1,4 @@
-package workwx
+package feishu
 
 import (
 	"bytes"
@@ -9,15 +9,11 @@ import (
 	"github.com/imroc/req/v3"
 )
 
-type WeBot struct {
+type FxBot struct {
 	Client     *req.Client
 	Config     interface{}
 	webhookURL string
 	uploadURL  string
-}
-
-type weConfig struct {
-	webhookURL string
 }
 
 type TextMessage struct {
@@ -53,40 +49,21 @@ type FileMessage struct {
 	MediaID string `json:"media_id"`
 }
 
-func (wb WeBot) parse() weConfig {
-	cfg, ok := wb.Config.(weConfig)
-	if !ok {
-		return weConfig{}
+func (fx FxBot) getUploadURL() string {
+	if fx.uploadURL != "" {
+		return fx.uploadURL
 	}
-	return cfg
+	fx.uploadURL = strings.ReplaceAll(fx.webhookURL, "webhook/send", "webhook/upload_media")
+	return fx.uploadURL
 }
 
-func (wb WeBot) getWebhookURL() string {
-	if wb.webhookURL != "" {
-		return wb.webhookURL
-	}
-	cfg := wb.parse()
-	if cfg.webhookURL != "" {
-		return cfg.webhookURL
-	}
-	return ""
-}
-
-func (wb WeBot) getUploadURL() string {
-	if wb.uploadURL != "" {
-		return wb.uploadURL
-	}
-	wb.uploadURL = strings.ReplaceAll(wb.webhookURL, "webhook/send", "webhook/upload_media")
-	return wb.uploadURL
-}
-
-func (wb WeBot) Send(msg *Message) (resp *Response, err error) {
+func (fx FxBot) Send(msg *Message) (resp *Response, err error) {
 	resp = &Response{}
-	r, err := wb.Client.R().
+	r, err := fx.Client.R().
 		SetBodyJsonMarshal(msg).
 		EnableDumpWithoutRequest().
 		SetResult(resp).
-		Post(wb.getWebhookURL())
+		Post(fx.webhookURL)
 	if err != nil {
 		return
 	}
@@ -100,25 +77,25 @@ func (wb WeBot) Send(msg *Message) (resp *Response, err error) {
 	return
 }
 
-func (wb WeBot) SendFileContent(filename string, content []byte) (resp *Response, err error) {
-	upload, err := wb.Upload(filename, content)
+func (fx FxBot) SendFileContent(filename string, content []byte) (resp *Response, err error) {
+	upload, err := fx.Upload(filename, content)
 	if err != nil {
 		return
 	}
 	file := &FileMessage{
 		MediaID: upload.MediaID,
 	}
-	return wb.Send(&Message{
+	return fx.Send(&Message{
 		Msgtype: "file",
 		File:    file,
 	})
 }
 
-func (wb WeBot) Upload(filename string, data []byte) (resp *UploadResponse, err error) {
+func (fx FxBot) Upload(filename string, data []byte) (resp *UploadResponse, err error) {
 	resp = &UploadResponse{}
 	cd := new(req.ContentDisposition)
 	cd.Add("filelength", strconv.Itoa(len(data)))
-	r, err := wb.Client.R().
+	r, err := fx.Client.R().
 		SetFileUpload(req.FileUpload{
 			ParamName:               "media",
 			FileName:                filename,
@@ -127,7 +104,7 @@ func (wb WeBot) Upload(filename string, data []byte) (resp *UploadResponse, err 
 		}).EnableDumpWithoutRequest().
 		SetQueryParam("type", "file").
 		SetResult(resp).
-		Post(wb.getUploadURL())
+		Post(fx.getUploadURL())
 	if err != nil {
 		return
 	}
@@ -141,33 +118,33 @@ func (wb WeBot) Upload(filename string, data []byte) (resp *UploadResponse, err 
 	return
 }
 
-func (wb WeBot) SendMarkdownContent(markdown string) (resp *Response, err error) {
-	return wb.SendMarkdown(&MarkdownMessage{
+func (fx FxBot) SendMarkdownContent(markdown string) (resp *Response, err error) {
+	return fx.SendMarkdown(&MarkdownMessage{
 		Content: markdown,
 	})
 }
 
-func (wb WeBot) SendMarkdown(markdown *MarkdownMessage) (resp *Response, err error) {
+func (fx FxBot) SendMarkdown(markdown *MarkdownMessage) (resp *Response, err error) {
 	msg := &Message{Msgtype: "markdown", Markdown: markdown}
-	return wb.Send(msg)
+	return fx.Send(msg)
 }
 
-func (wb WeBot) SendText(text *TextMessage) (resp *Response, err error) {
+func (fx FxBot) SendText(text *TextMessage) (resp *Response, err error) {
 	msg := &Message{Msgtype: "text", Text: text}
-	return wb.Send(msg)
+	return fx.Send(msg)
 }
 
-func (wb WeBot) SendTextContent(text string) (resp *Response, err error) {
+func (fx FxBot) SendTextContent(text string) (resp *Response, err error) {
 	msg := &TextMessage{
 		Content: text,
 	}
-	return wb.SendText(msg)
+	return fx.SendText(msg)
 }
 
-func (wb WeBot) Debug(debug bool) {
+func (fx FxBot) Debug(debug bool) {
 	if debug {
-		wb.Client.EnableDumpAll().EnableDebugLog().EnableTraceAll()
+		fx.Client.EnableDumpAll().EnableDebugLog().EnableTraceAll()
 	} else {
-		wb.Client.DisableDebugLog().DisableDumpAll().DisableTraceAll()
+		fx.Client.DisableDebugLog().DisableDumpAll().DisableTraceAll()
 	}
 }
