@@ -1,60 +1,93 @@
 package feishu
 
 import (
-	"bytes"
 	"fmt"
-	"strconv"
-	"strings"
 
 	"github.com/imroc/req/v3"
 )
 
 type FxBot struct {
-	Client     *req.Client
-	Config     interface{}
-	webhookURL string
-	uploadURL  string
+	Client *req.Client
+	Config interface{}
 }
 
-type TextMessage struct {
-	Content             string   `json:"content"`
-	MentionedList       []string `json:"mentioned_list,omitempty"`
-	MentionedMobileList []string `json:"mentioned_mobile_list,omitempty"`
-}
-
-type MarkdownMessage struct {
-	Content string `json:"content"`
+type Config struct {
+	WebhookURL string
 }
 
 type Message struct {
-	Msgtype  string           `json:"msgtype"`
-	Text     *TextMessage     `json:"text,omitempty"`
-	Markdown *MarkdownMessage `json:"markdown,omitempty"`
-	File     *FileMessage     `json:"file,omitempty"`
+	MsgType string  `json:"msg_type"`
+	Content Content `json:"content"`
+}
+
+type Content struct {
+	Text     string   `json:"text,omitempty"`
+	Post     PostBody `json:"post,omitempty"`
+	ImageKey string   `json:"image_key,omitempty"`
+	Card     Card     `json:"card,omitempty"`
+}
+
+type PostBody struct {
+	ZHCN PostBodyContents `json:"zh_cn"`
+}
+
+type PostBodyContents struct {
+	Title   string            `json:"title"`
+	Content []PostBodyContent `json:"content"`
+}
+
+type PostBodyContent struct {
+	Tag    string `json:"tag"`
+	Text   string `json:"text,omitempty"`
+	Href   string `json:"href,omitempty"`
+	UserID string `json:"user_id,omitempty"`
+}
+
+// https://open.feishu.cn/tool/cardbuilder?from=custom_bot_doc
+
+type Card struct {
+	Config   CardConfig    `json:"config,omitempty"`
+	Header   CardHeader    `json:"header,omitempty"`
+	Elements []CardElement `json:"elements,omitempty"`
+}
+
+type CardConfig struct {
+	WideScreenMode bool `json:"wide_screen_mode"`
+	EnableForward  bool `json:"enable_forward"`
+}
+
+type CardHeader struct {
+	Template string   `json:"template"`
+	Title    CardText `json:"title"`
+}
+
+type CardElement struct {
+	Tag     string       `json:"tag"`
+	Fields  []CardField  `json:"fields,omitempty"`
+	Text    CardText     `json:"text,omitempty"`
+	Actions []CardAction `json:"action,omitempty"`
+}
+
+type CardField struct {
+	IsShort bool     `json:"is_short"`
+	Text    CardText `json:"text"`
+}
+
+type CardText struct {
+	Content string `json:"content"`
+	Tag     string `json:"tag"`
+}
+
+type CardAction struct {
+	Tag  string   `json:"tag"`
+	Text CardText `json:"text,omitempty"`
+	URL  string   `json:"url,omitempty"`
+	Type string   `json:"type,omitempty"`
 }
 
 type Response struct {
 	Errcode int    `json:"errcode"`
 	Errmsg  string `json:"errmsg"`
-}
-
-type UploadResponse struct {
-	Response
-	Type      string `json:"type"`
-	MediaID   string `json:"media_id"`
-	CreatedAt string `json:"created_at"`
-}
-
-type FileMessage struct {
-	MediaID string `json:"media_id"`
-}
-
-func (fx FxBot) getUploadURL() string {
-	if fx.uploadURL != "" {
-		return fx.uploadURL
-	}
-	fx.uploadURL = strings.ReplaceAll(fx.webhookURL, "webhook/send", "webhook/upload_media")
-	return fx.uploadURL
 }
 
 func (fx FxBot) Send(msg *Message) (resp *Response, err error) {
@@ -63,7 +96,7 @@ func (fx FxBot) Send(msg *Message) (resp *Response, err error) {
 		SetBodyJsonMarshal(msg).
 		EnableDumpWithoutRequest().
 		SetResult(resp).
-		Post(fx.webhookURL)
+		Post("") // TODO webhook url
 	if err != nil {
 		return
 	}
@@ -75,70 +108,6 @@ func (fx FxBot) Send(msg *Message) (resp *Response, err error) {
 		err = fmt.Errorf(resp.Errmsg)
 	}
 	return
-}
-
-func (fx FxBot) SendFileContent(filename string, content []byte) (resp *Response, err error) {
-	upload, err := fx.Upload(filename, content)
-	if err != nil {
-		return
-	}
-	file := &FileMessage{
-		MediaID: upload.MediaID,
-	}
-	return fx.Send(&Message{
-		Msgtype: "file",
-		File:    file,
-	})
-}
-
-func (fx FxBot) Upload(filename string, data []byte) (resp *UploadResponse, err error) {
-	resp = &UploadResponse{}
-	cd := new(req.ContentDisposition)
-	cd.Add("filelength", strconv.Itoa(len(data)))
-	r, err := fx.Client.R().
-		SetFileUpload(req.FileUpload{
-			ParamName:               "media",
-			FileName:                filename,
-			File:                    bytes.NewReader(data),
-			ExtraContentDisposition: cd,
-		}).EnableDumpWithoutRequest().
-		SetQueryParam("type", "file").
-		SetResult(resp).
-		Post(fx.getUploadURL())
-	if err != nil {
-		return
-	}
-	if !r.IsSuccess() {
-		err = fmt.Errorf("bad response:\n%s", r.Dump())
-		return
-	}
-	if resp.Errcode != 0 {
-		err = fmt.Errorf(resp.Errmsg)
-	}
-	return
-}
-
-func (fx FxBot) SendMarkdownContent(markdown string) (resp *Response, err error) {
-	return fx.SendMarkdown(&MarkdownMessage{
-		Content: markdown,
-	})
-}
-
-func (fx FxBot) SendMarkdown(markdown *MarkdownMessage) (resp *Response, err error) {
-	msg := &Message{Msgtype: "markdown", Markdown: markdown}
-	return fx.Send(msg)
-}
-
-func (fx FxBot) SendText(text *TextMessage) (resp *Response, err error) {
-	msg := &Message{Msgtype: "text", Text: text}
-	return fx.Send(msg)
-}
-
-func (fx FxBot) SendTextContent(text string) (resp *Response, err error) {
-	msg := &TextMessage{
-		Content: text,
-	}
-	return fx.SendText(msg)
 }
 
 func (fx FxBot) Debug(debug bool) {
